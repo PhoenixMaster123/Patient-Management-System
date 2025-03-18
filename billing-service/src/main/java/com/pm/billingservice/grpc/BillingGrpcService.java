@@ -13,8 +13,7 @@ public class BillingGrpcService extends BillingServiceImplBase {
 
     private static final Logger log = LoggerFactory.getLogger(BillingGrpcService.class);
     @Override
-    public void createBillingAccount(BillingRequest billingRequest,
-                                     StreamObserver<BillingResponse> responseObserver) {
+    public void createBillingAccount(BillingRequest billingRequest, StreamObserver<BillingResponse> responseObserver) {
         log.info("Received request for creating billing account: {}", billingRequest.toString());
 
         // Business logic - e.g. save to database, perform some operation, etc.
