@@ -1,7 +1,10 @@
 # 🏥 Patient Management System (Microservices)
 
 ## 📌 Overview
-This project is a **Patient Management System** built using **Microservices Architecture** with **Spring Boot** and **AWS**. It enables efficient patient data management, secure transactions, and scalable communication between healthcare-related services.
+This project is a **Patient Management System** designed with a **Microservices Architecture**, leveraging **Spring Boot** and **AWS (LocalStack)** for scalable and efficient healthcare data management. It enables secure patient record handling, appointment scheduling, and billing operations.
+
+The system supports both **RESTful APIs** for external communication and **gRPC** for efficient inter-service communication, ensuring high performance and scalability in distributed environments.
+
 
 ## ⚙️ Technologies Used
 - **Spring Boot** (for backend microservices)
