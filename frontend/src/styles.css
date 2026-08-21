@@ -1,0 +1,701 @@
+/* ============================================================
+   Records Console — Patient Management System
+   Concept: the registry as a filing system; intake as the
+   carbonless triplicate the backend actually performs
+   (patient row -> billing over gRPC -> PatientEvent on Kafka).
+   Colour carries meaning: canary = billing, rose = event log —
+   so both appear ONLY in the triplicate, never as chrome.
+   ============================================================ */
+
+:root {
+  --ink:      #12211C;  /* green-black, all text            */
+  --corridor: #DCE3D9;  /* institutional green-grey, ground */
+  --drawer:   #CCD6C9;  /* recessed drawer ground           */
+  --sheet:    #F7F5EF;  /* the white copy — card surfaces   */
+  --canary:   #F2D857;  /* ALWAYS billing                   */
+  --rose:     #E9AEB3;  /* ALWAYS the event log             */
+  --stamp:    #2E5E4E;  /* clinical green, actions + stamps */
+  --void:     #8E2F4A;  /* rubber-stamp red, errors         */
+
+  --muted:    #5C6B63;
+  --rule:     #B7C2B4;
+
+  --inst:    "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --human:   "Newsreader", Georgia, "Times New Roman", serif;
+  --machine: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --lift: 0 1px 0 rgba(18, 33, 28, .18), 0 6px 14px -8px rgba(18, 33, 28, .35);
+  --lift-high: 0 2px 0 rgba(18, 33, 28, .2), 0 18px 34px -14px rgba(18, 33, 28, .45);
+  --card-radius: 2px;   /* card stock, not software */
+  --rail-h: 54px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+/* scrollbars in the palette rather than the operating system's */
+* { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border: 3px solid var(--corridor);
+  border-radius: 6px;
+}
+.drawer::-webkit-scrollbar-thumb { border-color: var(--drawer); }
+
+body {
+  margin: 0;
+  background: var(--corridor);
+  color: var(--ink);
+  font-family: var(--human);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- type roles ------------------------------------------------ */
+/* Archivo expanded = the institution. Newsreader = the person.
+   DM Mono = the machine. Never mixed across roles.               */
+
+.inst {
+  font-family: var(--inst);
+  font-stretch: 118%;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .13em;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.machine {
+  font-family: var(--machine);
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: -.01em;
+  font-variant-ligatures: none;
+}
+
+.human { font-family: var(--human); }
+
+.muted { color: var(--muted); }
+
+/* ---- focus floor ----------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--stamp);
+  outline-offset: 2px;
+  border-radius: 1px;
+}
+
+/* ============================================================
+   RAIL — the department nameplate
+   ============================================================ */
+.rail {
+  height: var(--rail-h);
+  background: var(--ink);
+  color: var(--sheet);
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 18px;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.rail-mark {
+  font-family: var(--inst);
+  font-stretch: 125%;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .01em;
+  font-size: 15px;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  white-space: nowrap;
+}
+
+.rail-mark span {
+  font-stretch: 100%;
+  font-weight: 400;
+  font-size: 9.5px;
+  letter-spacing: .2em;
+  color: rgba(247, 245, 239, .5);
+}
+
+.rail-nav { display: flex; gap: 4px; margin-left: 6px; }
+
+.rail-tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: rgba(247, 245, 239, .58);
+  padding: 7px 13px;
+  cursor: pointer;
+  border-radius: 2px;
+  font-family: var(--inst);
+  font-stretch: 118%;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .13em;
+  font-size: 10px;
+  transition: color .16s ease, background-color .16s ease;
+}
+.rail-tab:hover { color: var(--sheet); background: rgba(247, 245, 239, .08); }
+.rail-tab[aria-current="true"] { color: var(--ink); background: var(--sheet); }
+
+.rail-end { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+
+.rail-session { color: rgba(247, 245, 239, .6); }
+
+.rail-signout {
+  appearance: none;
+  background: transparent;
+  border: 1px solid rgba(247, 245, 239, .3);
+  color: rgba(247, 245, 239, .8);
+  padding: 6px 11px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--inst);
+  font-stretch: 118%;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .13em;
+  font-size: 10px;
+  transition: border-color .16s ease, color .16s ease;
+}
+.rail-signout:hover { border-color: var(--sheet); color: var(--sheet); }
+.rail-signout { white-space: nowrap; }
+
+/* demo-mode banner — always honest about where data comes from */
+.demo-strip {
+  background: var(--sheet);
+  color: var(--void);
+  border-bottom: 2px solid var(--void);
+  padding: 7px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  top: var(--rail-h);
+  z-index: 39;
+}
+
+/* ============================================================
+   WORKSPACE
+   ============================================================ */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) 1fr;
+  min-height: calc(100vh - var(--rail-h));
+  align-items: start;
+}
+
+/* ---- the drawer ------------------------------------------------ */
+.drawer {
+  background: var(--drawer);
+  border-right: 1px solid var(--rule);
+  padding: 16px 14px 40px;
+  position: sticky;
+  top: var(--rail-h);
+  max-height: calc(100vh - var(--rail-h));
+  overflow-y: auto;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.search {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius);
+  background: var(--sheet);
+  color: var(--ink);
+  font-family: var(--human);
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+.search::placeholder { color: var(--muted); font-style: italic; }
+
+/* Letter dividers are real navigation: the drawer is filed A-Z. */
+.divider {
+  position: sticky;
+  top: -16px;
+  background: var(--drawer);
+  color: var(--stamp);
+  font-family: var(--inst);
+  font-stretch: 125%;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: .14em;
+  padding: 9px 0 5px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 7px;
+  z-index: 2;
+}
+
+.tab-list { list-style: none; margin: 0 0 6px; padding: 0; }
+
+.tab {
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-left: 3px solid transparent;
+  border-radius: var(--card-radius);
+  padding: 8px 10px;
+  margin-bottom: 5px;
+  cursor: pointer;
+  color: inherit;
+  display: block;
+  transition: transform .14s ease, box-shadow .14s ease, border-left-color .14s ease;
+}
+.tab:hover { transform: translateX(3px); box-shadow: var(--lift); }
+.tab[aria-current="true"] {
+  border-left-color: var(--stamp);
+  box-shadow: var(--lift);
+  transform: translateX(3px);
+}
+
+/* Surname first — the order the drawer is actually filed in. */
+.tab-name {
+  font-family: var(--human);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.25;
+  display: block;
+}
+.tab-meta { display: block; margin-top: 2px; color: var(--muted); }
+
+.drawer-empty {
+  padding: 22px 4px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ---- the stage ------------------------------------------------- */
+.stage {
+  padding: 28px 30px 60px;
+  min-width: 0;
+}
+
+/* ============================================================
+   SHEETS — card stock on the corridor ground
+   ============================================================ */
+.sheet-card {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius);
+  box-shadow: var(--lift);
+  position: relative;
+}
+
+/* torn-off top edge, tying every card to the form it came from */
+.perf {
+  background-image: radial-gradient(circle at 5px 0, var(--corridor) 0 3px, transparent 3.4px);
+  background-size: 10px 9px;
+  background-repeat: repeat-x;
+  background-position: top left;
+  padding-top: 10px;
+}
+
+/* ---- the record ------------------------------------------------ */
+.record {
+  max-width: 660px;
+  padding: 30px 32px 26px;
+}
+
+.record-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.record-name {
+  font-family: var(--human);
+  font-weight: 400;
+  font-size: clamp(30px, 4.2vw, 42px);
+  line-height: 1.05;
+  letter-spacing: -.015em;
+  margin: 4px 0 0;
+}
+
+.record-id {
+  margin-top: 9px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* the rubber date stamp */
+.stamp-mark {
+  flex: none;
+  color: var(--stamp);
+  border: 2px solid var(--stamp);
+  outline: 1px solid var(--stamp);
+  outline-offset: 2px;
+  border-radius: 2px;
+  padding: 7px 11px 6px;
+  text-align: center;
+  transform: rotate(-3.5deg);
+  opacity: .82;
+  font-family: var(--inst);
+  font-stretch: 112%;
+  text-transform: uppercase;
+}
+.stamp-mark b {
+  display: block;
+  font-family: var(--machine);
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+  margin-top: 3px;
+}
+.stamp-label { font-size: 8.5px; letter-spacing: .18em; font-weight: 600; }
+
+.fields {
+  margin: 26px 0 0;
+  border-top: 1px solid var(--rule);
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+  align-items: baseline;
+}
+.field dt { color: var(--muted); padding-top: 3px; }
+.field dd { margin: 0; }
+
+.field-human { font-size: 16.5px; }
+
+.record-actions {
+  display: flex;
+  gap: 9px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+}
+
+/* the question gets its own line so the two answers stay side by side */
+.confirm { margin-top: 22px; }
+.confirm-q { color: var(--void); margin: 0; max-width: 46ch; }
+.confirm .record-actions { margin-top: 12px; }
+
+/* ---- buttons --------------------------------------------------- */
+.btn {
+  appearance: none;
+  font-family: var(--inst);
+  font-stretch: 118%;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .13em;
+  font-size: 10px;
+  padding: 10px 16px;
+  border-radius: var(--card-radius);
+  cursor: pointer;
+  border: 1px solid var(--ink);
+  background: var(--sheet);
+  color: var(--ink);
+  transition: background-color .16s ease, color .16s ease, transform .1s ease;
+}
+.btn:hover { background: var(--ink); color: var(--sheet); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btn:disabled:hover { background: var(--sheet); color: var(--ink); }
+
+.btn-primary { background: var(--stamp); border-color: var(--stamp); color: var(--sheet); }
+.btn-primary:hover { background: var(--ink); border-color: var(--ink); }
+.btn-primary:disabled:hover { background: var(--stamp); color: var(--sheet); }
+
+.btn-void { border-color: var(--void); color: var(--void); }
+.btn-void:hover { background: var(--void); color: var(--sheet); }
+
+/* ---- empty stage ----------------------------------------------- */
+.blank {
+  max-width: 430px;
+  margin-top: 6vh;
+  color: var(--muted);
+}
+.blank h2 {
+  font-family: var(--human);
+  font-weight: 400;
+  font-size: 26px;
+  color: var(--ink);
+  margin: 0 0 8px;
+  letter-spacing: -.01em;
+}
+.blank p { margin: 0 0 18px; }
+
+/* ============================================================
+   THE TRIPLICATE — the one place canary and rose appear
+   ============================================================ */
+.intake { max-width: 700px; }
+
+.intake-head { margin-bottom: 20px; }
+.intake-title {
+  font-family: var(--human);
+  font-weight: 400;
+  font-size: clamp(26px, 3.4vw, 34px);
+  letter-spacing: -.015em;
+  margin: 6px 0 6px;
+}
+.intake-sub { color: var(--muted); max-width: 52ch; margin: 0; }
+
+/* The stack: the white copy carries the fields, canary and rose show
+   their own edge band beneath it — the sheets you are also filling in. */
+.stack { position: relative; padding-bottom: 62px; }
+
+.stack-copy {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius);
+  display: flex;
+  align-items: flex-end;
+  padding: 0 16px 8px;
+  color: rgba(18, 33, 28, .66);
+  box-shadow: var(--lift);
+}
+/* canary sits above rose so each band shows its own colour */
+.stack-canary { background: var(--canary); transform: translate(7px, 31px); z-index: 2; }
+.stack-rose   { background: var(--rose);   transform: translate(14px, 62px); z-index: 1; }
+
+.stack-form {
+  position: relative;
+  z-index: 3;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius);
+  box-shadow: var(--lift-high);
+  padding: 24px 26px 26px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px 18px;
+}
+.form-row-wide { grid-column: 1 / -1; }
+
+.form-field { display: flex; flex-direction: column; gap: 6px; }
+.form-field label { color: var(--muted); }
+
+.input {
+  padding: 10px 11px;
+  border: 1px solid var(--rule);
+  border-bottom: 2px solid var(--ink);
+  border-radius: var(--card-radius) var(--card-radius) 0 0;
+  background: rgba(255, 255, 255, .55);
+  color: var(--ink);
+  font-family: var(--human);
+  font-size: 15.5px;
+  min-width: 0;
+}
+.input::placeholder { color: rgba(92, 107, 99, .62); font-style: italic; }
+.input-date { font-family: var(--machine); font-size: 13.5px; }
+.input-invalid { border-bottom-color: var(--void); background: rgba(142, 47, 74, .05); }
+
+/* errors speak in the human voice, so they never read as another label */
+.field-error {
+  color: var(--void);
+  font-family: var(--human);
+  font-size: 13.5px;
+  font-style: italic;
+  line-height: 1.35;
+}
+
+.form-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+  flex-wrap: wrap;
+}
+.form-note {
+  color: var(--muted);
+  max-width: 34ch;
+  font-size: 13.5px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.alert {
+  border: 1px solid var(--void);
+  border-left: 3px solid var(--void);
+  border-radius: var(--card-radius);
+  background: rgba(142, 47, 74, .06);
+  color: var(--void);
+  padding: 11px 13px;
+  margin-bottom: 18px;
+}
+
+/* ---- the receipt: three copies, filed ------------------------- */
+.receipt { max-width: 860px; }
+
+.copies {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.copy {
+  border: 1px solid var(--rule);
+  border-radius: var(--card-radius);
+  padding: 16px 16px 18px;
+  box-shadow: var(--lift);
+  min-height: 218px;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(-16px);
+  animation: file-copy .52s cubic-bezier(.22, .9, .3, 1) forwards;
+}
+.copy-white  { background: var(--sheet);  animation-delay: .05s; --tilt: -.5deg; }
+.copy-canary { background: var(--canary); animation-delay: .22s; --tilt:  .4deg; }
+.copy-rose   { background: var(--rose);   animation-delay: .39s; --tilt: -.7deg; }
+
+@keyframes file-copy {
+  to { opacity: 1; transform: translateY(0) rotate(var(--tilt, 0deg)); }
+}
+
+.copy-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(18, 33, 28, .22);
+  margin-bottom: 12px;
+}
+.copy-dest { font-size: 11px; letter-spacing: .15em; }
+.copy-n { font-family: var(--machine); font-size: 11px; opacity: .6; }
+
+.copy-line { margin-bottom: 10px; }
+.copy-line dt { color: rgba(18, 33, 28, .6); margin-bottom: 2px; }
+/* break only where a token genuinely cannot fit — never mid-word by default */
+.copy-line dd { margin: 0; overflow-wrap: anywhere; word-break: normal; font-size: 11px; }
+
+.copy-foot {
+  margin-top: auto;
+  padding-top: 12px;
+  color: rgba(18, 33, 28, .62);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.copy-status {
+  display: inline-block;
+  border: 1.5px solid var(--stamp);
+  color: var(--stamp);
+  border-radius: 2px;
+  padding: 3px 7px;
+  transform: rotate(-2deg);
+}
+
+/* ============================================================
+   SIGN-IN
+   ============================================================ */
+.gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 30px 20px;
+}
+.gate-card { width: min(400px, 100%); padding: 30px 30px 28px; }
+.gate-mark {
+  font-family: var(--inst);
+  font-stretch: 125%;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 17px;
+  letter-spacing: .01em;
+  margin-bottom: 3px;
+}
+.gate-sub { color: var(--muted); margin: 0 0 24px; }
+.gate-fields { display: flex; flex-direction: column; gap: 14px; }
+.gate-foot { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
+.gate-hint {
+  border-top: 1px solid var(--rule);
+  padding-top: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.gate-hint code {
+  font-family: var(--machine);
+  font-size: 11.5px;
+  background: rgba(46, 94, 78, .1);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.link-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--stamp);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+.back-btn { display: none; }
+
+@media (max-width: 900px) {
+  .workspace { grid-template-columns: 1fr; }
+  .drawer {
+    position: static;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  /* master/detail: one at a time, so a long roster never buries the record */
+  .workspace.is-detail .drawer { display: none; }
+  .back-btn { display: inline-flex; margin-bottom: 18px; }
+  .divider { top: 0; }
+  .stage { padding: 22px 18px 50px; }
+  .copies { grid-template-columns: 1fr; }
+  .copy { min-height: 0; }
+}
+
+@media (max-width: 620px) {
+  .rail { gap: 8px; padding: 0 10px; }
+  .rail-mark span, .rail-session { display: none; }
+  .rail-mark { font-size: 13px; }
+  .rail-nav { gap: 2px; margin-left: 0; }
+  .rail-tab { padding: 7px 8px; letter-spacing: .09em; }
+  .rail-signout { padding: 6px 8px; letter-spacing: .09em; }
+  .form-grid { grid-template-columns: 1fr; }
+  .record { padding: 24px 20px 22px; }
+  .record-top { flex-direction: column-reverse; align-items: flex-start; gap: 14px; }
+  .field { grid-template-columns: 1fr; gap: 3px; }
+  .stack-copy { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  .copy { opacity: 1; transform: none; }
+}
