@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.pm</groupId>
+    <artifactId>patient-management-system</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Patient Management System</name>
+    <description>
+        Healthcare microservices for patient records, billing, authentication and
+        analytics, communicating over REST, gRPC and Kafka behind an API gateway.
+    </description>
+
+    <!--
+      Aggregator only: every module keeps spring-boot-starter-parent as its parent, so
+      nothing inherited changes. It exists so the repository imports as one Maven project,
+      which is what puts target/generated-sources/protobuf on the IDE source path.
+      Note: `mvn test` also runs integration-tests, which expects a running stack.
+    -->
+    <modules>
+        <module>api-gateway</module>
+        <module>auth-service</module>
+        <module>patient-service</module>
+        <module>billing-service</module>
+        <module>analytics-service</module>
+        <module>infrastructure</module>
+        <module>integration-tests</module>
+    </modules>
+</project>
