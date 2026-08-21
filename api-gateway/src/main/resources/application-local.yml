@@ -1,0 +1,47 @@
+# Profile for running the services directly on your machine (not in Docker).
+#
+#   java -jar target/api-gateway-0.0.1-SNAPSHOT.jar --spring.profiles.active=local
+#
+# Same routes as application.yml, but pointing at localhost instead of the
+# compose hostnames. application.yml defines no auth.service.url, and the
+# gateway will not start without one, so it is set here too.
+
+server:
+  port: 4004
+
+auth:
+  service:
+    url: http://localhost:4005
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: auth-service-route
+          uri: http://localhost:4005
+          predicates:
+            - Path=/auth/**
+          filters:
+            - StripPrefix=1
+
+        - id: patient-service-route
+          uri: http://localhost:4000
+          predicates:
+            - Path=/api/patients/**
+          filters:
+            - StripPrefix=1
+            - JwtValidation
+
+        - id: api-docs-patient-route
+          uri: http://localhost:4000
+          predicates:
+            - Path=/api-docs/patients
+          filters:
+            - RewritePath=/api-docs/patients,/v3/api-docs
+
+        - id: api-docs-auth-route
+          uri: http://localhost:4005
+          predicates:
+            - Path=/api-docs/auth
+          filters:
+            - RewritePath=/api-docs/auth,/v3/api-docs
