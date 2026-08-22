@@ -50,7 +50,7 @@
                     </dependency>
                 </dependencies>
                 <configuration>
-                    <configLocation>checkstyle.xml</configLocation>
+                    <configLocation>checkstyle/checkstyle.xml</configLocation>
                     <includeTestSourceDirectory>false</includeTestSourceDirectory>
                     <consoleOutput>true</consoleOutput>
                     <!-- checkstyle.xml uses severity "warning"; flip both to fail the build. -->
@@ -65,6 +65,26 @@
                         <sourceDirectory>${project.basedir}/infrastructure/src/main/java</sourceDirectory>
                         <sourceDirectory>${project.basedir}/integration-tests/src/main/java</sourceDirectory>
                     </sourceDirectories>
+                </configuration>
+            </plugin>
+
+            <!--
+              PMD skips a "pom" project outright, so unlike Checkstyle it cannot be aimed at
+              the module sources from here. Use the aggregate goals, which walk the reactor:
+              `mvn pmd:aggregate-pmd-check` — note no -N, since it needs the other modules.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <version>3.26.0</version>
+                <configuration>
+                    <rulesets>
+                        <ruleset>checkstyle/pmd-ruleset.xml</ruleset>
+                    </rulesets>
+                    <targetJdk>21</targetJdk>
+                    <printFailingErrors>true</printFailingErrors>
+                    <!-- Reports without breaking the build, matching Checkstyle. -->
+                    <failOnViolation>false</failOnViolation>
                 </configuration>
             </plugin>
         </plugins>
