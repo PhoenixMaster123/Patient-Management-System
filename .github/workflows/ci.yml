@@ -2,13 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, frontend]
+    branches: [main, frontend, deployment]
   pull_request:
   workflow_dispatch:
 
 jobs:
-  checkstyle:
-    name: Checkstyle
+  analysis:
+    name: Static analysis
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,15 +21,22 @@ jobs:
 
       # -N keeps this on the aggregator: it already points at every module's
       # sources, so recursing would re-check them with the wrong basedir.
-      - name: Run Checkstyle
+      - name: Checkstyle
         run: mvn -B -N checkstyle:check
 
-      - name: Upload Checkstyle report
+      # PMD skips a "pom" project outright and cannot be aimed at the module
+      # sources the way Checkstyle can, so it needs the reactor — hence no -N.
+      - name: PMD
+        run: mvn -B pmd:aggregate-pmd-check
+
+      - name: Upload analysis reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: checkstyle-report
-          path: target/checkstyle-result.xml
+          name: analysis-reports
+          path: |
+            target/checkstyle-result.xml
+            target/pmd.xml
           if-no-files-found: warn
 
   backend:
@@ -74,7 +81,7 @@ jobs:
       - run: npm run build
 
   integration:
-    name: Integration tests
+    name: Stack and integration tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -90,18 +97,70 @@ jobs:
         run: docker compose up -d --build
 
       # The gateway answers 401 on /api/patients without a token, which is proof
-      # enough that it and the services behind it are accepting traffic.
+      # that it and the auth-service behind its filter are accepting traffic.
       - name: Wait for the gateway
         run: |
           for i in $(seq 1 60); do
             code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4004/api/patients || true)
-            if [ "$code" = "401" ]; then echo "gateway up after ${i}s"; exit 0; fi
+            if [ "$code" = "401" ]; then echo "gateway up after ~$((i * 5))s"; exit 0; fi
             sleep 5
           done
-          echo "gateway did not come up"
-          docker compose ps
+          echo "::error::gateway never returned 401"
+          docker compose ps -a
           docker compose logs --tail=80
           exit 1
+
+      # Every service must report a successful Spring Boot startup AND still be
+      # running. Checking only one of the two would miss a service that booted
+      # and then died, or one that never booted but left its container up.
+      - name: Verify every microservice started
+        run: |
+          fail=0
+
+          for svc in api-gateway auth-service patient-service billing-service analytics-service; do
+            if docker compose logs "$svc" 2>/dev/null | grep -qE "Started [A-Za-z]+Application in"; then
+              echo "started   $svc"
+            else
+              echo "::error::$svc never logged a successful startup"
+              fail=1
+            fi
+          done
+
+          for svc in postgres kafka api-gateway auth-service patient-service billing-service analytics-service; do
+            state=$(docker compose ps -a --format '{{.Service}} {{.State}}' | awk -v s="$svc" '$1 == s {print $2}')
+            if [ "$state" = "running" ]; then
+              echo "running   $svc"
+            else
+              echo "::error::$svc is '$state', expected 'running'"
+              fail=1
+            fi
+          done
+
+          exit $fail
+
+      # Proves the three-service fan-out, not just that the processes are alive:
+      # creating a patient must reach billing over gRPC and analytics over Kafka.
+      - name: Verify the create fan-out reaches billing and analytics
+        run: |
+          TOKEN=$(curl -s -X POST http://localhost:4004/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"testuser@test.com","password":"password123"}' \
+            | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          [ -n "$TOKEN" ] || { echo "::error::login returned no token"; exit 1; }
+
+          ID=$(curl -s -X POST http://localhost:4004/api/patients \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d '{"name":"CI Probe","email":"ci.probe@example.com","address":"1 CI Way","dateOfBirth":"1990-01-01","registeredDate":"2026-01-01"}' \
+            | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+          [ -n "$ID" ] || { echo "::error::patient was not created"; exit 1; }
+          echo "created patient $ID"
+
+          sleep 10
+          docker compose logs billing-service   | grep -q "$ID" || { echo "::error::billing-service never saw $ID over gRPC"; exit 1; }
+          docker compose logs analytics-service | grep -q "$ID" || { echo "::error::analytics-service never consumed $ID from Kafka"; exit 1; }
+          echo "billing and analytics both saw $ID"
+
+          curl -s -X DELETE "http://localhost:4004/api/patients/$ID" -H "Authorization: Bearer $TOKEN" -o /dev/null
 
       - name: Run integration tests
         run: mvn -B -pl integration-tests test
