@@ -201,12 +201,22 @@ This is also why the Docker images build with `-DskipTests`: an image build has 
 
 | Job | What it does |
 | --- | --- |
-| Checkstyle | `mvn -N checkstyle:check`, uploads the report as an artifact |
+| Static analysis | `mvn -N checkstyle:check` and `mvn pmd:aggregate-pmd-check`, uploading both reports |
 | Build backend | `mvn -DskipTests package` across all modules, uploads the service jars |
 | Build console | `npm ci && npm run build` |
-| Integration tests | Brings up the full compose stack, waits for the gateway, runs `integration-tests`, tears it down |
+| Stack and integration tests | Brings up the full compose stack and checks it really works, then tears it down |
 
 The backend job compiles the protobuf sources as part of packaging, so a broken `.proto` fails there.
+
+The stack job does not settle for "the containers are up". It asserts, in order:
+
+1. the gateway answers `401` on `/api/patients`, so it and the auth-service behind its filter are live;
+2. every service logged `Started …Application`, **and** every container is still in state `running` —
+   checking only one would miss a service that booted and then died, or one that never booted but left
+   its container up;
+3. creating a patient reaches billing over gRPC and analytics over Kafka, matched by patient id in both
+   services' logs, which is the only check that proves the wiring rather than the processes;
+4. the RestAssured suite in `integration-tests` passes.
 
 ## Deployment
 
@@ -225,19 +235,25 @@ manually.
 
 ## Code style
 
-Checkstyle, configured in [`checkstyle.xml`](checkstyle.xml) and wired into the root POM:
+Both analysers keep their configuration in [`checkstyle/`](checkstyle/):
 
-```bash
-mvn -N checkstyle:check
-```
+| Tool | Config | Command | Covers |
+| --- | --- | --- | --- |
+| Checkstyle | `checkstyle/checkstyle.xml` | `mvn -N checkstyle:check` | Formatting, naming, imports |
+| PMD | `checkstyle/pmd-ruleset.xml` | `mvn pmd:aggregate-pmd-check` | Dead code, likely bugs, simplification |
 
-`-N` matters. The root POM aggregates the modules but is not their parent, so the plugin is pointed at
-every module's source directory from one place; without `-N`, Maven would recurse and re-check them with
-the wrong base directory.
+The two flags differ, and it is not arbitrary. The root POM aggregates the modules but is **not** their
+parent, so neither plugin reaches them by inheritance:
 
-Rules are set to `warning`, so the build reports violations without failing on them — there are 33 today
-(tab characters, star imports, over-long lines, `log` fields that break the constant naming rule). Clear
-those and set `severity` to `error` in `checkstyle.xml` to start failing on regressions.
+- Checkstyle accepts explicit `sourceDirectories`, so it is aimed at every module from the root and must
+  run with `-N` — otherwise Maven recurses and re-checks each module with the wrong base directory.
+- PMD skips a `pom` project outright and ignores the equivalent setting, so it needs its aggregate goal
+  and the full reactor — hence **no** `-N`.
+
+Neither fails the build today. Checkstyle reports 33 findings (tab characters, star imports, over-long
+lines, `log` fields breaking the constant naming rule); PMD reports 1 (an unused local in
+`LocalStack.java`). To start failing on regressions, set `severity` to `error` in `checkstyle.xml` and
+`failOnViolation` to `true` for PMD in the root POM.
 
 ## Architecture
 
@@ -283,7 +299,7 @@ api-requests/         HTTP client request files
 grpc-requests/        gRPC request files
 docker/               Postgres init script
 docker-compose.yml    Full stack
-checkstyle.xml        Style rules
+checkstyle/           Checkstyle and PMD rule sets
 pom.xml               Aggregator, so the repo imports as one Maven project
 ```
 
@@ -291,7 +307,7 @@ pom.xml               Aggregator, so the repo imports as one Maven project
 
 Spring Boot 3.4 · Java 21 · Spring Cloud Gateway · PostgreSQL · Apache Kafka · gRPC and Protocol
 Buffers · JWT · Docker Compose · AWS CDK with LocalStack · React 18 with Vite · JUnit 5 with RestAssured
-· Checkstyle · GitHub Actions
+· Checkstyle and PMD · GitHub Actions
 
 ## License ⚖️
 
