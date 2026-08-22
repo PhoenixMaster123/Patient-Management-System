@@ -179,21 +179,48 @@ Ready-made requests live in `api-requests/` (IntelliJ HTTP client) and `grpc-req
 
 ## Testing
 
-| Suite | Command | Needs a running stack |
-| --- | --- | --- |
-| Integration (`integration-tests`) | `mvn -pl integration-tests test` | Yes — the gateway on `:4004` |
-| Service context tests | `mvn test -pl patient-service` etc. | Yes — Postgres and Kafka |
-| Console build | `cd frontend && npm run build` | No |
+60 tests, split by whether they need the stack running.
 
-Both service and integration tests are `@SpringBootTest` / RestAssured style, so they expect real
-infrastructure rather than mocks. Start the stack first:
+| Suite | Command | Tests | Needs a running stack |
+| --- | --- | --- | --- |
+| Unit | `mvn test -pl api-gateway,auth-service,patient-service,billing-service,analytics-service` | 43 | No |
+| Integration | `mvn -pl integration-tests test` | 17 | Yes — the gateway on `:4004` |
+| Console build | `cd frontend && npm run build` | — | No |
+
+**Unit tests** mock every collaborator, so they need no database, broker or gRPC server. They cover the
+logic worth protecting:
+
+| Module | Covers |
+| --- | --- |
+| `patient-service` | that a create writes the row *then* opens billing *then* publishes the event, that a duplicate email is refused before anything is written, and that an update does neither |
+| `auth-service` | that `JwtUtil` rejects a foreign signature, a spliced signature and forged claims; that `AuthService` refuses an unknown user without even checking the password |
+| `billing-service` | the fixed `12345` / `ACTIVE` response, pinned so the day it becomes real the change is visible |
+| `analytics-service` | that a poison message is swallowed rather than rethrown, which is what stops one bad event blocking the partition |
+
+The three `contextLoads` tests are in this set too. They need nothing external: `patient-service` falls
+back to the H2 on its test classpath, and the Kafka and gRPC clients connect lazily.
+
+**Integration tests** drive the real gateway with RestAssured. Start the stack first:
 
 ```bash
 docker compose up -d --build
 mvn -pl integration-tests test
 ```
 
-This is also why the Docker images build with `-DskipTests`: an image build has no database to talk to.
+They cover login and token validation, the roster's auth failures, a full create → read → update →
+delete lifecycle, duplicate emails, and per-field validation errors. Point them at another host with
+`-Dapi.base.url=http://host:4004`.
+
+Two things they deliberately pin as-is rather than as you would expect:
+
+- `GET /api/patients` returns a JSON **array**, not an object with a `patients` key. Asserting on that
+  key passes vacuously against an array, so the tests assert on the array itself.
+- `GET /auth/validate` with no `Authorization` header answers **400, not 401**: `@RequestHeader` is
+  required by default, so Spring rejects the request before the controller runs — which also makes the
+  controller's own `authHeader == null` branch unreachable.
+
+Docker images build with `-DskipTests` because an image build has no stack to talk to; CI runs the
+tests instead.
 
 ## Continuous integration
 
@@ -203,6 +230,7 @@ This is also why the Docker images build with `-DskipTests`: an image build has 
 | --- | --- |
 | Static analysis | `mvn -N checkstyle:check` and `mvn pmd:aggregate-pmd-check`, uploading both reports |
 | Build backend | `mvn -DskipTests package` across all modules, uploads the service jars |
+| Unit tests | 43 tests across the five services, no stack required |
 | Build console | `npm ci && npm run build` |
 | Stack and integration tests | Brings up the full compose stack and checks it really works, then tears it down |
 
