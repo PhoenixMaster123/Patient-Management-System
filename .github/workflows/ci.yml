@@ -1,0 +1,184 @@
+name: CI
+
+on:
+  push:
+    branches: [main, frontend, deployment]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # -N keeps this on the aggregator: it already points at every module's
+      # sources, so recursing would re-check them with the wrong basedir.
+      - name: Checkstyle
+        run: mvn -B -N checkstyle:check
+
+      # PMD skips a "pom" project outright and cannot be aimed at the module
+      # sources the way Checkstyle can, so it needs the reactor — hence no -N.
+      - name: PMD
+        run: mvn -B pmd:aggregate-pmd-check
+
+      - name: Upload analysis reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-reports
+          path: |
+            target/checkstyle-result.xml
+            target/pmd.xml
+          if-no-files-found: warn
+
+  backend:
+    name: Build backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # Compiles the protobuf sources too, so this is what catches a broken .proto.
+      - name: Package all modules
+        run: mvn -B -DskipTests package
+
+      - name: Upload service jars
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-jars
+          path: '*/target/*-0.0.1-SNAPSHOT.jar'
+          if-no-files-found: error
+
+  frontend:
+    name: Build console
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+  integration:
+    name: Stack and integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Start the stack
+        run: docker compose up -d --build
+
+      # A tokenless request is rejected by the gateway's own JWT filter before it
+      # proxies anywhere, so a 401 says nothing about the services behind it —
+      # the gateway answers in seconds while patient-service can take ~40s. Wait
+      # on each service's own startup line instead, or this races and flakes.
+      - name: Wait for every microservice to start
+        run: |
+          pending="api-gateway auth-service patient-service billing-service analytics-service"
+          deadline=$(( $(date +%s) + 240 ))
+
+          while true; do
+            remaining=""
+            for svc in $pending; do
+              if docker compose logs "$svc" 2>/dev/null | grep -qE "Started [A-Za-z]+Application in"; then
+                echo "started   $svc"
+              else
+                remaining="$remaining $svc"
+              fi
+            done
+            pending=$(echo $remaining | xargs)
+            [ -z "$pending" ] && break
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              for svc in $pending; do echo "::error::$svc never logged a successful startup"; done
+              docker compose ps -a
+              docker compose logs --tail=100
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "all five services started"
+
+      # Separate from the startup check: a service can log "Started" and then die.
+      - name: Verify every container is still running
+        run: |
+          fail=0
+          for svc in postgres kafka api-gateway auth-service patient-service billing-service analytics-service; do
+            state=$(docker compose ps -a --format '{{.Service}} {{.State}}' | awk -v s="$svc" '$1 == s {print $2}')
+            if [ "$state" = "running" ]; then
+              echo "running   $svc"
+            else
+              echo "::error::$svc is '$state', expected 'running'"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Verify the gateway rejects an unauthenticated call
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4004/api/patients)
+          [ "$code" = "401" ] || { echo "::error::expected 401 from the gateway, got $code"; exit 1; }
+          echo "gateway returned 401 without a token, as expected"
+
+      # Proves the three-service fan-out, not just that the processes are alive:
+      # creating a patient must reach billing over gRPC and analytics over Kafka.
+      - name: Verify the create fan-out reaches billing and analytics
+        run: |
+          TOKEN=$(curl -s -X POST http://localhost:4004/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"testuser@test.com","password":"password123"}' \
+            | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          [ -n "$TOKEN" ] || { echo "::error::login returned no token"; exit 1; }
+
+          ID=$(curl -s -X POST http://localhost:4004/api/patients \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d '{"name":"CI Probe","email":"ci.probe@example.com","address":"1 CI Way","dateOfBirth":"1990-01-01","registeredDate":"2026-01-01"}' \
+            | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+          [ -n "$ID" ] || { echo "::error::patient was not created"; exit 1; }
+          echo "created patient $ID"
+
+          sleep 10
+          docker compose logs billing-service   | grep -q "$ID" || { echo "::error::billing-service never saw $ID over gRPC"; exit 1; }
+          docker compose logs analytics-service | grep -q "$ID" || { echo "::error::analytics-service never consumed $ID from Kafka"; exit 1; }
+          echo "billing and analytics both saw $ID"
+
+          curl -s -X DELETE "http://localhost:4004/api/patients/$ID" -H "Authorization: Bearer $TOKEN" -o /dev/null
+
+      - name: Run integration tests
+        run: mvn -B -pl integration-tests test
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v

@@ -30,4 +30,63 @@
         <module>infrastructure</module>
         <module>integration-tests</module>
     </modules>
+
+    <build>
+        <plugins>
+            <!--
+              Children inherit from spring-boot-starter-parent, not from this POM, so a
+              plugin declared here would not reach them. Point Checkstyle at every module's
+              sources instead, and one `mvn checkstyle:check` at the root covers the repo.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>3.6.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.puppycrawl.tools</groupId>
+                        <artifactId>checkstyle</artifactId>
+                        <version>10.21.1</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <configLocation>checkstyle/checkstyle.xml</configLocation>
+                    <includeTestSourceDirectory>false</includeTestSourceDirectory>
+                    <consoleOutput>true</consoleOutput>
+                    <!-- checkstyle.xml uses severity "warning"; flip both to fail the build. -->
+                    <violationSeverity>error</violationSeverity>
+                    <failOnViolation>true</failOnViolation>
+                    <sourceDirectories>
+                        <sourceDirectory>${project.basedir}/api-gateway/src/main/java</sourceDirectory>
+                        <sourceDirectory>${project.basedir}/auth-service/src/main/java</sourceDirectory>
+                        <sourceDirectory>${project.basedir}/patient-service/src/main/java</sourceDirectory>
+                        <sourceDirectory>${project.basedir}/billing-service/src/main/java</sourceDirectory>
+                        <sourceDirectory>${project.basedir}/analytics-service/src/main/java</sourceDirectory>
+                        <sourceDirectory>${project.basedir}/infrastructure/src/main/java</sourceDirectory>
+                        <sourceDirectory>${project.basedir}/integration-tests/src/main/java</sourceDirectory>
+                    </sourceDirectories>
+                </configuration>
+            </plugin>
+
+            <!--
+              PMD skips a "pom" project outright, so unlike Checkstyle it cannot be aimed at
+              the module sources from here. Use the aggregate goals, which walk the reactor:
+              `mvn pmd:aggregate-pmd-check` — note no -N, since it needs the other modules.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <version>3.26.0</version>
+                <configuration>
+                    <rulesets>
+                        <ruleset>checkstyle/pmd-ruleset.xml</ruleset>
+                    </rulesets>
+                    <targetJdk>21</targetJdk>
+                    <printFailingErrors>true</printFailingErrors>
+                    <!-- Reports without breaking the build, matching Checkstyle. -->
+                    <failOnViolation>false</failOnViolation>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

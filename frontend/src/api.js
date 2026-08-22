@@ -11,6 +11,14 @@ export const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 export const GATEWAY_LABEL =
   import.meta.env.VITE_API_BASE || import.meta.env.VITE_GATEWAY || 'http://localhost:4004';
 
+/**
+ * Built for a host with no backend behind it, such as GitHub Pages.
+ * There, a request to /auth/login is answered by the static host with a 404
+ * page rather than failing outright, so the usual "gateway unreachable" path
+ * never triggers. Skip the network entirely and run on the seeded registry.
+ */
+export const DEMO_ONLY = import.meta.env.VITE_DEMO_ONLY === 'true';
+
 /** A request the gateway answered, but rejected. Carries the field map from GlobalExceptionHandler. */
 export class ApiError extends Error {
   constructor(message, fields = {}) {

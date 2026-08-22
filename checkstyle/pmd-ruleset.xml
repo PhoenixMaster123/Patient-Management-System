@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<ruleset name="Patient Management System"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        Rules chosen to catch bugs and dead code, not to enforce a house style — Checkstyle
+        already covers formatting and naming. Whole categories are deliberately not imported:
+        they bury real findings under hundreds of stylistic ones on a Spring codebase.
+    </description>
+
+    <!-- Dead and unreachable code -->
+    <rule ref="category/java/bestpractices.xml/UnusedPrivateField"/>
+    <rule ref="category/java/bestpractices.xml/UnusedPrivateMethod"/>
+    <rule ref="category/java/bestpractices.xml/UnusedLocalVariable"/>
+    <rule ref="category/java/bestpractices.xml/UnusedFormalParameter"/>
+    <rule ref="category/java/bestpractices.xml/UnusedAssignment"/>
+
+    <!-- Likely bugs -->
+    <rule ref="category/java/errorprone.xml/CompareObjectsWithEquals"/>
+    <rule ref="category/java/errorprone.xml/BrokenNullCheck"/>
+    <rule ref="category/java/errorprone.xml/EmptyCatchBlock"/>
+    <rule ref="category/java/errorprone.xml/OverrideBothEqualsAndHashcode"/>
+    <rule ref="category/java/errorprone.xml/ReturnFromFinallyBlock"/>
+    <rule ref="category/java/errorprone.xml/UnconditionalIfStatement"/>
+    <rule ref="category/java/errorprone.xml/UselessOperationOnImmutable"/>
+    <rule ref="category/java/errorprone.xml/ImplicitSwitchFallThrough"/>
+    <rule ref="category/java/errorprone.xml/AvoidBranchingStatementAsLastInLoop"/>
+    <rule ref="category/java/bestpractices.xml/LiteralsFirstInComparisons"/>
+
+    <!-- Simplification -->
+    <rule ref="category/java/design.xml/CollapsibleIfStatements"/>
+    <rule ref="category/java/design.xml/SimplifiedTernary"/>
+    <rule ref="category/java/design.xml/UselessOverridingMethod"/>
+
+    <!-- Cheap performance wins -->
+    <rule ref="category/java/performance.xml/AddEmptyString"/>
+    <rule ref="category/java/performance.xml/AppendCharacterWithChar"/>
+    <rule ref="category/java/performance.xml/ConsecutiveAppendsShouldReuse"/>
+    <rule ref="category/java/performance.xml/InefficientStringBuffering"/>
+    <rule ref="category/java/performance.xml/StringInstantiation"/>
+</ruleset>

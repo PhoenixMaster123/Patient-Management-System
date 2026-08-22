@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+  Checks that catch real problems rather than enforcing a house style.
+  Severity is "warning": CI reports the count and publishes the report, but a
+  violation does not fail the build. Raise this to "error" once the existing
+  findings are cleared and the plugin will start failing on regressions.
+-->
+<module name="Checker">
+    <property name="severity" value="warning"/>
+    <property name="fileExtensions" value="java"/>
+
+    <!-- Generated protobuf sources live under target/ and are never checked. -->
+    <module name="BeforeExecutionExclusionFileFilter">
+        <property name="fileNamePattern" value=".*[\\/]target[\\/].*"/>
+    </module>
+
+    <module name="LineLength">
+        <property name="max" value="140"/>
+        <property name="ignorePattern" value="^package.*|^import.*|https?://"/>
+    </module>
+    <module name="FileTabCharacter"/>
+    <module name="NewlineAtEndOfFile"/>
+
+    <module name="TreeWalker">
+        <!-- imports -->
+        <module name="UnusedImports"/>
+        <module name="RedundantImport"/>
+        <module name="AvoidStarImport"/>
+
+        <!-- likely bugs -->
+        <module name="EqualsHashCode"/>
+        <module name="StringLiteralEquality"/>
+        <module name="MissingSwitchDefault"/>
+        <module name="FallThrough"/>
+        <module name="SimplifyBooleanExpression"/>
+        <module name="SimplifyBooleanReturn"/>
+        <module name="EmptyStatement"/>
+        <module name="NeedBraces"/>
+        <module name="EmptyBlock">
+            <property name="option" value="text"/>
+        </module>
+
+        <!-- naming -->
+        <module name="PackageName"/>
+        <module name="TypeName"/>
+        <module name="MethodName"/>
+        <module name="MemberName"/>
+        <module name="LocalVariableName"/>
+        <module name="ConstantName"/>
+
+        <!-- readability -->
+        <module name="ModifierOrder"/>
+        <module name="UpperEll"/>
+        <module name="WhitespaceAfter"/>
+        <module name="NoWhitespaceBefore"/>
+    </module>
+</module>

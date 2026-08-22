@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, GATEWAY_LABEL, ApiError, OfflineError } from '../api.js';
+import { api, GATEWAY_LABEL, DEMO_ONLY, ApiError, OfflineError } from '../api.js';
 import { SEED_LOGIN } from '../seed.js';
 
 export default function SignIn({ onSignedIn }) {
@@ -11,6 +11,7 @@ export default function SignIn({ onSignedIn }) {
 
   async function submit(event) {
     event.preventDefault();
+    if (DEMO_ONLY) { enterDemo(); return; }
     setBusy(true);
     setError(null);
     try {
@@ -43,7 +44,20 @@ export default function SignIn({ onSignedIn }) {
     <main className="gate">
       <div className="sheet-card perf gate-card">
         <div className="gate-mark">Records Console</div>
-        <p className="gate-sub">Sign in to open the patient registry.</p>
+        <p className="gate-sub">
+          {DEMO_ONLY
+            ? 'Demo build. Sign in to open the seeded patient registry.'
+            : 'Sign in to open the patient registry.'}
+        </p>
+
+        {DEMO_ONLY && (
+          <div className="gate-demo">
+            <div className="inst" style={{ marginBottom: 5 }}>No backend here</div>
+            This build runs on the 15 patients from <span className="machine">data.sql</span>, held
+            in memory. Register, edit, and remove records freely — nothing is saved, and a refresh
+            brings them all back.
+          </div>
+        )}
 
         {error && <div className="alert">{error}</div>}
 
@@ -98,8 +112,12 @@ export default function SignIn({ onSignedIn }) {
 
             <p className="gate-hint machine">
               Seeded user: <code>{SEED_LOGIN.email}</code> / <code>{SEED_LOGIN.password}</code>
-              <br />
-              Gateway: <code>{GATEWAY_LABEL}</code>
+              {!DEMO_ONLY && (
+                <>
+                  <br />
+                  Gateway: <code>{GATEWAY_LABEL}</code>
+                </>
+              )}
             </p>
           </div>
         </form>
