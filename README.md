@@ -210,13 +210,16 @@ The backend job compiles the protobuf sources as part of packaging, so a broken 
 
 The stack job does not settle for "the containers are up". It asserts, in order:
 
-1. the gateway answers `401` on `/api/patients`, so it and the auth-service behind its filter are live;
-2. every service logged `Started …Application`, **and** every container is still in state `running` —
-   checking only one would miss a service that booted and then died, or one that never booted but left
-   its container up;
-3. creating a patient reaches billing over gRPC and analytics over Kafka, matched by patient id in both
+1. every service logs `Started …Application`, polled until all five do. This is the readiness gate, and
+   deliberately **not** the gateway's `401` — a tokenless request is rejected by the gateway's own JWT
+   filter before it proxies anywhere, so the gateway answers in seconds while patient-service is still
+   booting (~40s). Gating on the 401 races and fails intermittently;
+2. every container is still in state `running` — a service can log `Started` and then die, so neither
+   check substitutes for the other;
+3. the gateway returns `401` without a token, now as an assertion rather than a wait;
+4. creating a patient reaches billing over gRPC and analytics over Kafka, matched by patient id in both
    services' logs, which is the only check that proves the wiring rather than the processes;
-4. the RestAssured suite in `integration-tests` passes.
+5. the RestAssured suite in `integration-tests` passes.
 
 ## Deployment
 

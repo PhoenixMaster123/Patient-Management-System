@@ -96,36 +96,41 @@ jobs:
       - name: Start the stack
         run: docker compose up -d --build
 
-      # The gateway answers 401 on /api/patients without a token, which is proof
-      # that it and the auth-service behind its filter are accepting traffic.
-      - name: Wait for the gateway
+      # A tokenless request is rejected by the gateway's own JWT filter before it
+      # proxies anywhere, so a 401 says nothing about the services behind it —
+      # the gateway answers in seconds while patient-service can take ~40s. Wait
+      # on each service's own startup line instead, or this races and flakes.
+      - name: Wait for every microservice to start
         run: |
-          for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4004/api/patients || true)
-            if [ "$code" = "401" ]; then echo "gateway up after ~$((i * 5))s"; exit 0; fi
+          pending="api-gateway auth-service patient-service billing-service analytics-service"
+          deadline=$(( $(date +%s) + 240 ))
+
+          while true; do
+            remaining=""
+            for svc in $pending; do
+              if docker compose logs "$svc" 2>/dev/null | grep -qE "Started [A-Za-z]+Application in"; then
+                echo "started   $svc"
+              else
+                remaining="$remaining $svc"
+              fi
+            done
+            pending=$(echo $remaining | xargs)
+            [ -z "$pending" ] && break
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              for svc in $pending; do echo "::error::$svc never logged a successful startup"; done
+              docker compose ps -a
+              docker compose logs --tail=100
+              exit 1
+            fi
             sleep 5
           done
-          echo "::error::gateway never returned 401"
-          docker compose ps -a
-          docker compose logs --tail=80
-          exit 1
+          echo "all five services started"
 
-      # Every service must report a successful Spring Boot startup AND still be
-      # running. Checking only one of the two would miss a service that booted
-      # and then died, or one that never booted but left its container up.
-      - name: Verify every microservice started
+      # Separate from the startup check: a service can log "Started" and then die.
+      - name: Verify every container is still running
         run: |
           fail=0
-
-          for svc in api-gateway auth-service patient-service billing-service analytics-service; do
-            if docker compose logs "$svc" 2>/dev/null | grep -qE "Started [A-Za-z]+Application in"; then
-              echo "started   $svc"
-            else
-              echo "::error::$svc never logged a successful startup"
-              fail=1
-            fi
-          done
-
           for svc in postgres kafka api-gateway auth-service patient-service billing-service analytics-service; do
             state=$(docker compose ps -a --format '{{.Service}} {{.State}}' | awk -v s="$svc" '$1 == s {print $2}')
             if [ "$state" = "running" ]; then
@@ -135,8 +140,13 @@ jobs:
               fail=1
             fi
           done
-
           exit $fail
+
+      - name: Verify the gateway rejects an unauthenticated call
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4004/api/patients)
+          [ "$code" = "401" ] || { echo "::error::expected 401 from the gateway, got $code"; exit 1; }
+          echo "gateway returned 401 without a token, as expected"
 
       # Proves the three-service fan-out, not just that the processes are alive:
       # creating a patient must reach billing over gRPC and analytics over Kafka.
