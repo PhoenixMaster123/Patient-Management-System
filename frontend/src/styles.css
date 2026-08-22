@@ -643,6 +643,18 @@ body {
   border-radius: 2px;
 }
 
+/* demo-build notice: same voice as the demo strip, sized for the sign-in card */
+.gate-demo {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--stamp);
+  border-radius: var(--card-radius);
+  background: rgba(46, 94, 78, .07);
+  padding: 11px 13px;
+  margin-bottom: 18px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .link-btn {
   appearance: none;
   background: none;

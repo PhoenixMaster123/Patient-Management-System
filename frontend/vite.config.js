@@ -6,7 +6,12 @@ import react from '@vitejs/plugin-react';
 // to it instead. Point VITE_GATEWAY elsewhere if the stack is not local.
 const gateway = process.env.VITE_GATEWAY ?? 'http://localhost:4004';
 
+// GitHub Pages serves a project site from /<repo>/, so the built asset URLs
+// need that prefix. VITE_BASE is set by the Pages workflow; local dev stays at /.
+const base = process.env.VITE_BASE ?? '/';
+
 export default defineConfig({
+  base,
   plugins: [react()],
   server: {
     port: 5173,
