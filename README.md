@@ -337,7 +337,7 @@ pom.xml               Aggregator, so the repo imports as one Maven project
 ## Technologies
 
 Spring Boot 3.4 · Java 21 · Spring Cloud Gateway · PostgreSQL · Apache Kafka · gRPC and Protocol
-Buffers · JWT · Docker Compose · AWS CDK with LocalStack · React 18 with Vite · JUnit 5 with RestAssured
+Buffers · JWT · Docker Compose · React 18 with Vite · JUnit 5 with RestAssured
 · Checkstyle and PMD · GitHub Actions
 
 ## License ⚖️
