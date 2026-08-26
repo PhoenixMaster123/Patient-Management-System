@@ -179,11 +179,12 @@ Ready-made requests live in `api-requests/` (IntelliJ HTTP client) and `grpc-req
 
 ## Testing
 
-60 tests, split by whether they need the stack running.
+89 tests, split by whether they need the stack running.
 
 | Suite | Command | Tests | Needs a running stack |
 | --- | --- | --- | --- |
 | Unit | `mvn test -pl api-gateway,auth-service,patient-service,billing-service,analytics-service` | 43 | No |
+| Console E2E | `cd frontend && npm run test:e2e` | 29 | No |
 | Integration | `mvn -pl integration-tests test` | 17 | Yes — the gateway on `:4004` |
 | Console build | `cd frontend && npm run build` | — | No |
 
@@ -199,6 +200,30 @@ logic worth protecting:
 
 The three `contextLoads` tests are in this set too. They need nothing external: `patient-service` falls
 back to the H2 on its test classpath, and the Kafka and gRPC clients connect lazily.
+
+**Console E2E tests** drive the built console in a real browser with Playwright. They run against the
+demo bundle — the same artifact the Pages workflow publishes — so they need no gateway, database or
+broker: `playwright.config.js` builds with `VITE_DEMO_ONLY=true` and serves it on `:4173` itself.
+
+```bash
+cd frontend
+npm install
+npx playwright install chromium   # once
+npm run test:e2e                  # npm run test:e2e:ui to watch them
+```
+
+| Spec | Covers |
+| --- | --- |
+| `sign-in` | The gate hides the registry, refuses anything but the seeded user, and signs back out |
+| `roster` | 15 patients filed surname-first under letter dividers; search by name, email, address and id; the empty result |
+| `record` | Opening a record, editing it back into the roster, and cancelling an edit |
+| `intake` | Per-field validation, a duplicate email, and a filed intake reaching the three-copies receipt |
+| `remove` | The confirmation step, declining it, and the delete itself |
+| `session` | The session surviving a reload, and the registry reseeding — what the sign-in card promises |
+
+Chromium only: this is a back-office desk, not a cross-browser product. The suite stops at the network
+boundary — `src/api.js`'s demo branch stands in for the gateway — because the integration suite below
+already drives the real one.
 
 **Integration tests** drive the real gateway with RestAssured. Start the stack first:
 
@@ -232,6 +257,7 @@ tests instead.
 | Build backend | `mvn -DskipTests package` across all modules, uploads the service jars |
 | Unit tests | 43 tests across the five services, no stack required |
 | Build console | `npm ci && npm run build` |
+| Console E2E | 29 Playwright tests against the demo bundle, no stack required; uploads the HTML report |
 | Stack and integration tests | Brings up the full compose stack and checks it really works, then tears it down |
 
 The backend job compiles the protobuf sources as part of packaging, so a broken `.proto` fails there.
@@ -337,7 +363,7 @@ pom.xml               Aggregator, so the repo imports as one Maven project
 ## Technologies
 
 Spring Boot 3.4 · Java 21 · Spring Cloud Gateway · PostgreSQL · Apache Kafka · gRPC and Protocol
-Buffers · JWT · Docker Compose · React 18 with Vite · JUnit 5 with RestAssured
+Buffers · JWT · Docker Compose · React 18 with Vite · JUnit 5 with RestAssured · Playwright
 · Checkstyle and PMD · GitHub Actions
 
 ## License ⚖️
