@@ -1,0 +1,104 @@
+name: PR Agent
+
+# PR-Agent automatically updates the PR description and code suggestions.
+# Manual commands supported in PR comments:
+#
+#   /describe
+#   /improve
+#   /review
+#   /ask <question>
+#
+# Ordinary PR comments do not start a runner.
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
+
+  issue_comment:
+    types:
+      - created
+
+jobs:
+  pr_agent:
+    name: Review pull request
+
+    # Automatic runs:
+    #   - supported pull_request events
+    #
+    # Manual runs:
+    #   - only recognized slash commands on pull requests
+    #
+    # Bot comments are ignored to prevent feedback loops.
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      (
+        github.event_name == 'pull_request' ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request &&
+          (
+            startsWith(github.event.comment.body, '/describe') ||
+            startsWith(github.event.comment.body, '/improve') ||
+            startsWith(github.event.comment.body, '/review') ||
+            startsWith(github.event.comment.body, '/ask')
+          )
+        )
+      )
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+
+    # A newer push supersedes an older PR-Agent run.
+    concurrency:
+      group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+
+    steps:
+      # Pinned version so a new PR-Agent release cannot silently change behavior.
+      - name: Run PR-Agent
+        uses: docker://pragent/pr-agent:0.41.0-github_action
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+          # Gemini configuration.
+          config.model: 'gemini/gemini-3.6-flash'
+          config.fallback_models: '["gemini/gemini-3.5-flash", "gemini/gemini-3.1-flash-lite", "gemini/gemini-2.5-flash"]'
+          config.custom_model_max_tokens: '128000'
+
+          # Automatic tools.
+          github_action_config.auto_describe: 'true'
+          github_action_config.auto_improve: 'true'
+          github_action_config.auto_review: 'false'
+
+          # Re-run description and suggestions after new commits are pushed.
+          github_action_config.handle_push_trigger: 'true'
+          github_action_config.push_commands: '["/describe", "/improve"]'
+
+          # PR description.
+          pr_description.publish_description_as_comment: 'false'
+          pr_description.publish_labels: 'true'
+          pr_description.enable_pr_diagram: 'true'
+          pr_description.enable_semantic_files_types: 'true'
+          pr_description.collapsible_file_list: 'true'
+          pr_description.final_update_message: 'false'
+
+          # Keep one suggestions comment updated instead of posting a new one.
+          pr_code_suggestions.persistent_comment: 'true'
+          pr_code_suggestions.focus_only_on_problems: 'true'
+
+          # Used if auto_review is enabled later.
+          pr_reviewer.persistent_comment: 'true'
+          pr_reviewer.final_update_message: 'false'
+          pr_reviewer.enable_review_labels_effort: 'true'
+          pr_reviewer.enable_review_labels_security: 'true'

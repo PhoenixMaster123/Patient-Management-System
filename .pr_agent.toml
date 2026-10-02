@@ -1,0 +1,45 @@
+# .pr_agent.toml
+
+[pr_reviewer]
+require_score_review = true
+require_tests_review = true
+require_security_review = true
+num_max_annotations = 10
+
+extra_instructions = """
+You are reviewing `patient-management-system`: Spring Boot microservices on Java 21
+(api-gateway, auth-service, patient-service, billing-service, analytics-service) talking
+over REST, gRPC (protobuf) and Kafka, plus a Vite frontend console under `frontend/`.
+
+Focus on:
+- Security: hardcoded secrets or JWT keys, missing authentication/authorization on gateway
+  routes, patient data (PII) in logs or error responses.
+- gRPC/protobuf: breaking changes to `.proto` messages (renumbered or reused field numbers).
+- Kafka: consumer/producer changes that break the event contract between services.
+- Resource handling: streams, channels and HTTP clients closed properly; explicit timeouts
+  on outgoing calls.
+- Tests: new business logic in a service should come with unit tests; changes to the
+  create-patient fan-out should keep the integration tests meaningful.
+"""
+
+[pr_code_suggestions]
+num_code_suggestions = 5
+
+extra_instructions = """
+- The project targets Java 21. Prefer records, pattern matching, switch expressions and
+  text blocks where they make code clearer. Do not suggest Java 22+ features.
+- Only suggest changes that fix real bugs, security issues or clear readability problems.
+"""
+
+[pr_description]
+publish_labels = true
+publish_description_as_comment = false
+enable_pr_diagram = true
+enable_semantic_files_types = true
+collapsible_file_list = "adaptive"
+final_update_message = false
+
+extra_instructions = """
+Highlight changes to .proto files, Kafka topics/events, gateway routes, database schema
+(data.sql / migrations) and docker-compose prominently in the summary.
+"""
