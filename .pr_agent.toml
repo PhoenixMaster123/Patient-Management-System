@@ -29,6 +29,11 @@ extra_instructions = """
 - The project targets Java 21. Prefer records, pattern matching, switch expressions and
   text blocks where they make code clearer. Do not suggest Java 22+ features.
 - Only suggest changes that fix real bugs, security issues or clear readability problems.
+- Do not claim that dependency versions, GitHub Action versions, API versions, or AI model
+  identifiers are invalid, unsupported or non-existent based only on model knowledge.
+  These are time-sensitive external facts. Only flag them when the repository itself,
+  an error log, or another concrete source in the PR proves they are invalid.
+- Google AI Studio model identifiers in the form `gemini/gemini-*` are intentional.
 """
 
 [pr_description]
