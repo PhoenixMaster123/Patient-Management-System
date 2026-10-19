@@ -290,6 +290,19 @@ Changes live in the browser tab and are gone on refresh.
 To turn it on: **Settings → Pages → Source: GitHub Actions**, then push to `main` or run the workflow
 manually.
 
+### LocalStack
+
+The CDK stack in `infrastructure/` runs the five services on LocalStack's ECS. With LocalStack running on
+port 4566:
+
+```bash
+cd infrastructure
+./localstack-deploy.sh
+```
+
+The script builds the five service images first (`docker build -t <service> <service>/`), because the stack
+uses them by name, then deploys `cdk.out/localstack.template.json` and prints the load balancer's address.
+
 ## Code style
 
 Both analysers keep their configuration in [`checkstyle/`](checkstyle/):
